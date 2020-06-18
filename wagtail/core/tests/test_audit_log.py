@@ -206,6 +206,7 @@ class TestAuditLog(TestCase):
                 'id': workflow.id,
                 'title': workflow.name,
                 'status': workflow_state.status,
+                'task_state_id': workflow_state.id,
                 'next': {
                     'id': workflow_state.current_task_state.task.id,
                     'title': workflow_state.current_task_state.task.name,
