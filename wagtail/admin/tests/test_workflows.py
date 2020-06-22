@@ -121,6 +121,7 @@ class TestWorkflowsCreateView(TestCase, WagtailTestUtils):
         moderators.user_set.add(self.moderator)
         moderators.permissions.add(Permission.objects.get(codename="add_workflow"))
 
+        self.root_page = Page.objects.get(depth=1)
 
     def get(self, params={}):
         return self.client.get(reverse('wagtailadmin_workflows:add'), params)
@@ -135,11 +136,29 @@ class TestWorkflowsCreateView(TestCase, WagtailTestUtils):
 
     def test_post(self):
         response = self.post({
-            'name': ['test_workflow'], 'active': ['on'], 'workflow_tasks-TOTAL_FORMS': ['2'],
-            'workflow_tasks-INITIAL_FORMS': ['0'], 'workflow_tasks-MIN_NUM_FORMS': ['0'],
-            'workflow_tasks-MAX_NUM_FORMS': ['1000'], 'workflow_tasks-0-task': [str(self.task_1.id)], 'workflow_tasks-0-id': [''],
-            'workflow_tasks-0-ORDER': ['1'], 'workflow_tasks-0-DELETE': [''], 'workflow_tasks-1-task': [str(self.task_2.id)],
-            'workflow_tasks-1-id': [''], 'workflow_tasks-1-ORDER': ['2'], 'workflow_tasks-1-DELETE': ['']})
+            'name': ['test_workflow'],
+            'active': ['on'],
+            'workflow_tasks-TOTAL_FORMS': ['2'],
+            'workflow_tasks-INITIAL_FORMS': ['0'],
+            'workflow_tasks-MIN_NUM_FORMS': ['0'],
+            'workflow_tasks-MAX_NUM_FORMS': ['1000'],
+            'workflow_tasks-0-task': [str(self.task_1.id)],
+            'workflow_tasks-0-id': [''],
+            'workflow_tasks-0-ORDER': ['1'],
+            'workflow_tasks-0-DELETE': [''],
+            'workflow_tasks-1-task': [str(self.task_2.id)],
+            'workflow_tasks-1-id': [''],
+            'workflow_tasks-1-ORDER': ['2'],
+            'workflow_tasks-1-DELETE': [''],
+            'pages-TOTAL_FORMS': ['2'],
+            'pages-INITIAL_FORMS': ['1'],
+            'pages-MIN_NUM_FORMS': ['0'],
+            'pages-MAX_NUM_FORMS': ['1000'],
+            'pages-0-page': [str(self.root_page.id)],
+            'pages-0-DELETE': [''],
+            'pages-1-page': [''],
+            'pages-1-DELETE': [''],
+        })
 
 
         # Should redirect back to index
@@ -168,6 +187,38 @@ class TestWorkflowsCreateView(TestCase, WagtailTestUtils):
         self.login(user=self.moderator)
         response = self.get()
         self.assertEqual(response.status_code, 200)
+
+    def test_page_already_has_workflow_check(self):
+        workflow = Workflow.objects.create(name="existing_workflow")
+        WorkflowPage.objects.create(workflow=workflow, page=self.root_page)
+
+        response = self.post({
+            'name': ['test_workflow'],
+            'active': ['on'],
+            'workflow_tasks-TOTAL_FORMS': ['2'],
+            'workflow_tasks-INITIAL_FORMS': ['0'],
+            'workflow_tasks-MIN_NUM_FORMS': ['0'],
+            'workflow_tasks-MAX_NUM_FORMS': ['1000'],
+            'workflow_tasks-0-task': [str(self.task_1.id)],
+            'workflow_tasks-0-id': [''],
+            'workflow_tasks-0-ORDER': ['1'],
+            'workflow_tasks-0-DELETE': [''],
+            'workflow_tasks-1-task': [str(self.task_2.id)],
+            'workflow_tasks-1-id': [''],
+            'workflow_tasks-1-ORDER': ['2'],
+            'workflow_tasks-1-DELETE': [''],
+            'pages-TOTAL_FORMS': ['2'],
+            'pages-INITIAL_FORMS': ['1'],
+            'pages-MIN_NUM_FORMS': ['0'],
+            'pages-MAX_NUM_FORMS': ['1000'],
+            'pages-0-page': [str(self.root_page.id)],
+            'pages-0-DELETE': [''],
+            'pages-1-page': [''],
+            'pages-1-DELETE': [''],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFormsetError(response, 'pages_formset', 0, 'page', ["This page already has workflow 'existing_workflow' assigned."])
 
 
 class TestWorkflowsEditView(TestCase, WagtailTestUtils):
@@ -211,11 +262,6 @@ class TestWorkflowsEditView(TestCase, WagtailTestUtils):
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'wagtailadmin/workflows/edit.html')
 
-        # Test that the form contains options for the active tasks, but not the inactive task
-        self.assertContains(response, "first_task")
-        self.assertContains(response, "second_task")
-        self.assertNotContains(response, "inactive_task")
-
         # Check that the list of pages has the page to which this workflow is assigned
         self.assertContains(response, self.page.title)
 
@@ -234,7 +280,16 @@ class TestWorkflowsEditView(TestCase, WagtailTestUtils):
             'workflow_tasks-1-task': [str(self.task_2.id)],
             'workflow_tasks-1-id': [''],
             'workflow_tasks-1-ORDER': ['2'],
-            'workflow_tasks-1-DELETE': ['']})
+            'workflow_tasks-1-DELETE': [''],
+            'pages-TOTAL_FORMS': ['2'],
+            'pages-INITIAL_FORMS': ['1'],
+            'pages-MIN_NUM_FORMS': ['0'],
+            'pages-MAX_NUM_FORMS': ['1000'],
+            'pages-0-page': [str(self.page.id)],
+            'pages-0-DELETE': [''],
+            'pages-1-page': [''],
+            'pages-1-DELETE': [''],
+        })
 
 
         # Should redirect back to index
@@ -264,68 +319,34 @@ class TestWorkflowsEditView(TestCase, WagtailTestUtils):
         response = self.get()
         self.assertEqual(response.status_code, 200)
 
+    def test_duplicate_page_check(self):
+        response = self.post({
+            'name': [str(self.workflow.name)],
+            'active': ['on'],
+            'workflow_tasks-TOTAL_FORMS': ['2'],
+            'workflow_tasks-INITIAL_FORMS': ['1'],
+            'workflow_tasks-MIN_NUM_FORMS': ['0'],
+            'workflow_tasks-MAX_NUM_FORMS': ['1000'],
+            'workflow_tasks-0-task': [str(self.task_1.id)],
+            'workflow_tasks-0-id': [str(self.workflow_task.id)],
+            'workflow_tasks-0-ORDER': ['1'],
+            'workflow_tasks-0-DELETE': [''],
+            'workflow_tasks-1-task': [str(self.task_2.id)],
+            'workflow_tasks-1-id': [''],
+            'workflow_tasks-1-ORDER': ['2'],
+            'workflow_tasks-1-DELETE': [''],
+            'pages-TOTAL_FORMS': ['2'],
+            'pages-INITIAL_FORMS': ['1'],
+            'pages-MIN_NUM_FORMS': ['0'],
+            'pages-MAX_NUM_FORMS': ['1000'],
+            'pages-0-page': [str(self.page.id)],
+            'pages-0-DELETE': [''],
+            'pages-1-page': [str(self.page.id)],
+            'pages-1-DELETE': [''],
+        })
 
-class TestAddWorkflowToPage(TestCase, WagtailTestUtils):
-    fixtures = ['test.json']
-
-    def setUp(self):
-        delete_existing_workflows()
-        self.login()
-        self.workflow = Workflow.objects.create(name="workflow")
-        self.page = Page.objects.first()
-        self.other_workflow = Workflow.objects.create(name="other_workflow")
-        self.other_page = Page.objects.last()
-        WorkflowPage.objects.create(workflow=self.other_workflow, page=self.other_page)
-
-        self.editor = get_user_model().objects.create_user(
-            username='editor',
-            email='editor@email.com',
-            password='password',
-        )
-        editors = Group.objects.get(name='Editors')
-        editors.user_set.add(self.editor)
-
-        self.moderator = get_user_model().objects.create_user(
-            username='moderator',
-            email='moderator@email.com',
-            password='password',
-        )
-        moderators = Group.objects.get(name='Moderators')
-        moderators.user_set.add(self.moderator)
-        moderators.permissions.add(Permission.objects.get(codename="change_workflow"))
-
-    def get(self, params={}):
-        return self.client.get(reverse('wagtailadmin_workflows:add_to_page', args=[self.workflow.id]), params)
-
-    def post(self, post_data={}):
-        return self.client.post(reverse('wagtailadmin_workflows:add_to_page', args=[self.workflow.id]), post_data)
-
-    def test_get(self):
-        response = self.get()
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, 'wagtailadmin/workflows/add_to_page.html')
-
-    def test_post(self):
-        # Check that a WorkflowPage instance is created correctly when a page with no existing workflow is created
-        self.post({'page': str(self.page.id), 'workflow': str(self.workflow.id)})
-        self.assertEqual(WorkflowPage.objects.filter(workflow=self.workflow, page=self.page).count(), 1)
-
-        # Check that trying to add a WorkflowPage for a page with an existing workflow does not create
-        self.post({'page': str(self.other_page.id), 'workflow': str(self.workflow.id)})
-        self.assertEqual(WorkflowPage.objects.filter(workflow=self.workflow, page=self.other_page).count(), 0)
-
-        # Check that this can be overridden by setting overwrite_existing to true
-        self.post({'page': str(self.other_page.id), 'overwrite_existing': 'True', 'workflow': str(self.workflow.id)})
-        self.assertEqual(WorkflowPage.objects.filter(workflow=self.workflow, page=self.other_page).count(), 1)
-
-    def test_permissions(self):
-        self.login(user=self.editor)
-        response = self.get()
-        self.assertEqual(response.status_code, 403)
-
-        self.login(user=self.moderator)
-        response = self.get()
-        self.assertEqual(response.status_code, 200)
+        self.assertFormsetError(response, 'pages_formset', None, None, ['You cannot assign this workflow to the same page multiple times.'])
 
 
 class TestRemoveWorkflow(TestCase, WagtailTestUtils):
@@ -468,8 +489,11 @@ class TestCreateTaskView(TestCase, WagtailTestUtils):
         moderators.user_set.add(self.moderator)
         moderators.permissions.add(Permission.objects.get(codename="add_task"))
 
-    def get(self, params={}):
-        return self.client.get(reverse('wagtailadmin_workflows:add_task', kwargs={'app_label': SimpleTask._meta.app_label, 'model_name': SimpleTask._meta.model_name}), params)
+    def get(self, url_kwargs=None, params={}):
+        url_kwargs = url_kwargs or {}
+        url_kwargs.setdefault('app_label', SimpleTask._meta.app_label)
+        url_kwargs.setdefault('model_name', SimpleTask._meta.model_name)
+        return self.client.get(reverse('wagtailadmin_workflows:add_task', kwargs=url_kwargs), params)
 
     def post(self, post_data={}):
         return self.client.post(reverse('wagtailadmin_workflows:add_task', kwargs={'app_label': SimpleTask._meta.app_label, 'model_name': SimpleTask._meta.model_name}), post_data)
@@ -478,6 +502,14 @@ class TestCreateTaskView(TestCase, WagtailTestUtils):
         response = self.get()
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'wagtailadmin/workflows/create_task.html')
+
+    def test_get_with_non_task_model(self):
+        response = self.get(url_kwargs={'app_label': 'wagtailcore', 'model_name': 'Site'})
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_with_base_task_model(self):
+        response = self.get(url_kwargs={'app_label': 'wagtailcore', 'model_name': 'Task'})
+        self.assertEqual(response.status_code, 404)
 
     def test_post(self):
         response = self.post({'name': 'test_task', 'active': 'on'})
@@ -1465,3 +1497,206 @@ class TestWorkflowStatus(TestCase, WagtailTestUtils):
         self.submit('action-restart-workflow')
         response = self.client.get(self.edit_url)
         self.assertRegex(response.content.decode('utf-8'), r'Awaiting[\s|\n]+{}'.format(self.task_1.name))
+
+
+class TestTaskChooserView(TestCase, WagtailTestUtils):
+    def setUp(self):
+        self.login()
+
+    def test_get(self):
+        response = self.client.get(reverse('wagtailadmin_workflows:task_chooser'))
+
+        self.assertEqual(response.status_code, 200)
+
+        self.assertTemplateUsed(response, "wagtailadmin/workflows/task_chooser/chooser.html")
+
+        # Check that the "select task type" view was shown in the "new" tab
+        self.assertTemplateUsed(response, "wagtailadmin/workflows/task_chooser/includes/select_task_type.html")
+        self.assertTemplateUsed(response, "wagtailadmin/workflows/task_chooser/includes/results.html")
+        self.assertTemplateNotUsed(response, "wagtailadmin/workflows/task_chooser/includes/create_form.html")
+        self.assertFalse(response.context['is_searching'])
+
+    def test_search(self):
+        response = self.client.get(reverse('wagtailadmin_workflows:task_chooser') + '?q=foo')
+
+        self.assertEqual(response.status_code, 200)
+
+        self.assertTemplateUsed(response, "wagtailadmin/workflows/task_chooser/includes/results.html")
+        self.assertTemplateNotUsed(response, "wagtailadmin/workflows/task_chooser/chooser.html")
+        self.assertTrue(response.context['is_searching'])
+
+    def test_pagination(self):
+        response = self.client.get(reverse('wagtailadmin_workflows:task_chooser') + '?p=2')
+
+        self.assertEqual(response.status_code, 200)
+
+        # When pagination is used, only the results template should be rendered
+        self.assertTemplateUsed(response, "wagtailadmin/workflows/task_chooser/includes/results.html")
+        self.assertTemplateNotUsed(response, "wagtailadmin/workflows/task_chooser/chooser.html")
+        self.assertFalse(response.context['is_searching'])
+
+    def test_get_with_create_model_selected(self):
+        response = self.client.get(reverse('wagtailadmin_workflows:task_chooser') + '?create_model=wagtailcore.GroupApprovalTask')
+
+        self.assertEqual(response.status_code, 200)
+
+        self.assertTemplateUsed(response, "wagtailadmin/workflows/task_chooser/chooser.html")
+
+        # Check that the "create" view was shown in the "new" tab
+        self.assertTemplateUsed(response, "wagtailadmin/workflows/task_chooser/includes/create_form.html")
+        self.assertTemplateNotUsed(response, "wagtailadmin/workflows/task_chooser/includes/select_task_type.html")
+
+    def test_get_with_non_task_create_model_selected(self):
+        response = self.client.get(reverse('wagtailadmin_workflows:task_chooser') + '?create_model=wagtailcore.Page')
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_with_base_task_create_model_selected(self):
+        # Task is technically a subclass of itself so we need an extra test for it
+        response = self.client.get(reverse('wagtailadmin_workflows:task_chooser') + '?create_model=wagtailcore.Task')
+
+        self.assertEqual(response.status_code, 404)
+
+    @mock.patch('wagtail.admin.views.workflows.get_task_types')
+    def test_get_with_single_task_model(self, get_task_types):
+        # When a single task type exists there's no need to specify create_model
+        get_task_types.return_value = [GroupApprovalTask]
+
+        response = self.client.get(reverse('wagtailadmin_workflows:task_chooser'))
+
+        self.assertEqual(response.status_code, 200)
+
+        self.assertTemplateUsed(response, "wagtailadmin/workflows/task_chooser/chooser.html")
+
+        # Check that the "create" view was shown in the "new" tab
+        self.assertTemplateUsed(response, "wagtailadmin/workflows/task_chooser/includes/create_form.html")
+        self.assertTemplateNotUsed(response, "wagtailadmin/workflows/task_chooser/includes/select_task_type.html")
+
+    # POST requests are for creating new tasks
+
+    def get_post_data(self):
+        return {
+            'create-task-name': 'Editor approval task',
+            'create-task-groups': [str(Group.objects.get(name="Editors").id)],
+        }
+
+    def test_post_with_create_model_selected(self):
+        response = self.client.post(reverse('wagtailadmin_workflows:task_chooser') + '?create_model=wagtailcore.GroupApprovalTask', self.get_post_data())
+
+        self.assertEqual(response.status_code, 201)
+
+        # Check that the task was created
+        task = Task.objects.get(name="Editor approval task", active=True)
+
+        # Check the response JSON
+        self.assertEqual(response.json(), {
+            "step": "task_chosen",
+            "result": {
+                "id": task.id,
+                "name": "Editor approval task",
+                "edit_url": reverse('wagtailadmin_workflows:task_chooser_edit', args=[task.id])
+            }
+        })
+
+    @mock.patch('wagtail.admin.views.workflows.get_task_types')
+    def test_post_with_single_task_model(self, get_task_types):
+        # When a single task type exists there's no need to specify create_model
+        get_task_types.return_value = [GroupApprovalTask]
+
+        response = self.client.post(reverse('wagtailadmin_workflows:task_chooser'), self.get_post_data())
+
+        self.assertEqual(response.status_code, 201)
+
+        # Check that the task was created
+        task = Task.objects.get(name="Editor approval task", active=True)
+
+        # Check the response JSON
+        self.assertEqual(response.json(), {
+            "step": "task_chosen",
+            "result": {
+                "id": task.id,
+                "name": "Editor approval task",
+                "edit_url": reverse('wagtailadmin_workflows:task_chooser_edit', args=[task.id])
+            }
+        })
+
+    def test_post_without_create_model_selected(self):
+        response = self.client.post(reverse('wagtailadmin_workflows:task_chooser'), self.get_post_data())
+
+        self.assertEqual(response.status_code, 400)
+
+        # Check that the task wasn't created
+        self.assertFalse(Task.objects.filter(name="Editor approval task", active=True).exists())
+
+    def test_post_with_non_task_create_model_selected(self):
+        response = self.client.post(reverse('wagtailadmin_workflows:task_chooser') + '?create_model=wagtailcore.Page', self.get_post_data())
+
+        self.assertEqual(response.status_code, 404)
+
+        # Check that the task wasn't created
+        self.assertFalse(Task.objects.filter(name="Editor approval task", active=True).exists())
+
+    def test_post_with_base_task_create_model_selected(self):
+        # Task is technically a subclass of itself so we need an extra test for it
+        response = self.client.post(reverse('wagtailadmin_workflows:task_chooser') + '?create_model=wagtailcore.Task', self.get_post_data())
+
+        self.assertEqual(response.status_code, 404)
+
+        # Check that the task wasn't created
+        self.assertFalse(Task.objects.filter(name="Editor approval task", active=True).exists())
+
+
+class TestTaskChooserChosenView(TestCase, WagtailTestUtils):
+    def setUp(self):
+        delete_existing_workflows()
+        self.login()
+        self.task = SimpleTask.objects.create(name="test_task")
+
+    def test_get(self):
+        response = self.client.get(reverse('wagtailadmin_workflows:task_chosen', args=[self.task.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/json')
+        self.assertEqual(response.json(), {
+            'result': {
+                'edit_url': reverse('wagtailadmin_workflows:task_chooser_edit', args=[self.task.id]),
+                'id': self.task.id,
+                'name': 'test_task'
+            },
+            'step': 'task_chosen'
+        })
+
+
+class TestTaskChooserEditView(TestCase, WagtailTestUtils):
+    def setUp(self):
+        delete_existing_workflows()
+        self.login()
+        self.task = SimpleTask.objects.create(name="test_task")
+
+    def test_get(self):
+        response = self.client.get(reverse('wagtailadmin_workflows:task_chooser_edit', args=[self.task.id]))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_post(self):
+        response = self.client.post(reverse('wagtailadmin_workflows:task_chooser_edit', args=[self.task.id]), {
+            'edit-task-name': "New name!"
+        })
+
+        self.assertEqual(response.status_code, 200)
+
+        # Check the task was updated
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.name, "New name!")
+
+    def test_post_invalid(self):
+        response = self.client.post(reverse('wagtailadmin_workflows:task_chooser_edit', args=[self.task.id]), {
+            'edit-task-name': ""
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFormError(response, "form", "name", ["This field is required."])
+
+        # Check the task wasn't updated
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.name, "test_task")

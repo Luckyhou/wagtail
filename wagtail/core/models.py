@@ -4,6 +4,7 @@ from collections import defaultdict
 from io import StringIO
 from urllib.parse import urlparse
 
+from django import forms
 from django.conf import settings
 from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
@@ -2801,6 +2802,20 @@ class WorkflowPage(models.Model):
         on_delete=models.CASCADE,
     )
 
+    def get_pages(self):
+        """
+        Returns a queryset of pages that are affected by this WorkflowPage link.
+
+        This includes all descendants of the page excluding any that have other WorkflowPages.
+        """
+        descendant_pages = Page.objects.descendant_of(self.page, inclusive=True)
+        descendant_workflow_pages = WorkflowPage.objects.filter(page_id__in=descendant_pages.values_list('id', flat=True)).exclude(pk=self.pk)
+
+        for path, depth in descendant_workflow_pages.values_list('page__path', 'page__depth'):
+            descendant_pages = descendant_pages.exclude(path__startswith=path, depth__gte=depth)
+
+        return descendant_pages
+
     class Meta:
         verbose_name = _('workflow page')
         verbose_name_plural = _('workflow pages')
@@ -2834,6 +2849,9 @@ class Task(models.Model):
     active = models.BooleanField(verbose_name=_('active'), default=True, help_text=_(
         "Active tasks can be added to workflows. Deactivating a task does not remove it from existing workflows."))
     objects = TaskManager()
+
+    admin_form_fields = ['name']
+    admin_form_readonly_on_edit_fields = []
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -3020,6 +3038,17 @@ class Workflow(ClusterableModel):
         WorkflowPage.objects.filter(workflow=self).delete()
         self.save()
 
+    def all_pages(self):
+        """
+        Returns a queryset of all the pages that this Workflow applies to.
+        """
+        pages = Page.objects.none()
+
+        for workflow_page in self.workflow_pages.all():
+            pages |= workflow_page.get_pages()
+
+        return pages
+
     class Meta:
         verbose_name = _('workflow')
         verbose_name_plural = _('workflows')
@@ -3027,6 +3056,12 @@ class Workflow(ClusterableModel):
 
 class GroupApprovalTask(Task):
     groups = models.ManyToManyField(Group, verbose_name=_('groups'), help_text=_('Pages at this step in a workflow will be moderated or approved by these groups of users'))
+
+    admin_form_fields = Task.admin_form_fields + ['groups']
+    admin_form_readonly_on_edit_fields = ['groups']
+    admin_form_widgets = {
+        'groups': forms.CheckboxSelectMultiple,
+    }
 
     def start(self, workflow_state, user=None):
         if workflow_state.page.locked_by:
